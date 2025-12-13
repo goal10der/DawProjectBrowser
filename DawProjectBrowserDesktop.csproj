@@ -1,17 +1,19 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType> 
+    <OutputType>WinExe</OutputType> 
     <TargetFramework>net10.0</TargetFramework> 
     <Nullable>enable</Nullable> 
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
     <AvaloniaResource Include="Assets/DAWLogos/*.png" /> 
     <AvaloniaResource Include="Assets/appIcon.ico" />
-    <AvaloniaResource Include="Assets/Icons/*.png" />
     
     <PackageReference Include="Avalonia" Version="11.3.9" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.9" />
