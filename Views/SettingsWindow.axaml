@@ -1,0 +1,46 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:DawProjectBrowser.Desktop.ViewModels"
+        mc:Ignorable="d" 
+        x:Class="DawProjectBrowser.Desktop.Views.SettingsWindow"
+        Title="Application Settings"
+        Width="400" Height="250"
+        CanResize="False">
+    
+    <Design.DataContext>
+        <vm:SettingsViewModel/>
+    </Design.DataContext>
+
+    <StackPanel Margin="15" Spacing="15">
+        
+        <TextBlock Text="Theme Configuration" FontSize="18" FontWeight="Bold"/>
+        
+        <StackPanel Spacing="5">
+            <TextBlock Text="Select Custom Theme:" FontWeight="SemiBold"/>
+            
+            <ComboBox ItemsSource="{Binding AvailableThemes}"
+                      SelectedItem="{Binding SelectedThemeName}">
+                </ComboBox>
+            
+            <TextBlock Text="To install new themes, place .axaml files in:"
+                       Classes="caption" Margin="0,5,0,0"/>
+            <TextBlock Text="{Binding ThemeFolderPath}" 
+                       TextWrapping="Wrap"
+                       Foreground="Gray"/>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0, 10, 0, 0">
+            
+            <Button Content="Cancel" 
+                    Command="{Binding CloseWindowCommand}"
+                    Classes="subtle"/>
+            
+            <Button Content="Apply &amp; Close" 
+                    Command="{Binding ApplyAndCloseCommand}"
+                    Classes="accent"/>
+            
+        </StackPanel>
+    </StackPanel>
+</Window>
