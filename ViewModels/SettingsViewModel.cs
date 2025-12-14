@@ -1,5 +1,3 @@
-// DawProjectBrowser.Desktop/ViewModels/SettingsViewModel.cs
-
 using System;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -7,14 +5,14 @@ using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DawProjectBrowser.Desktop.Services;
-using DawProjectBrowser.Desktop.Views;
+using DawProjectBrowser.Desktop; // Required to access App.CustomThemesPath
 
 namespace DawProjectBrowser.Desktop.ViewModels
 {
     public partial class SettingsViewModel : ObservableObject
     {
         private readonly ThemeManagerService _themeManagerService;
-        private readonly SettingsWindow _settingsWindow;
+        private readonly Action _closeWindowAction; // Stored action to close the UI
         
         // Property bound to the TextBlock in the UI
         public string ThemeFolderPath { get; } = App.CustomThemesPath;
@@ -24,20 +22,17 @@ namespace DawProjectBrowser.Desktop.ViewModels
 
         // Property bound to the ComboBox SelectedItem
         [ObservableProperty]
-        private string _selectedThemeName = "(Default)"; // Default selection
+        private string _selectedThemeName = "(Default)";
 
-
-        // Command for the "Apply & Close" button
+        // Commands
         public IRelayCommand ApplyAndCloseCommand { get; }
-
-        // Command for the "Cancel" button
         public IRelayCommand CloseWindowCommand { get; }
 
-
-        public SettingsViewModel(ThemeManagerService themeManagerService, SettingsWindow settingsWindow)
+        // Constructor receives dependencies and the Close Action
+        public SettingsViewModel(ThemeManagerService themeManagerService, Action closeWindowAction)
         {
             _themeManagerService = themeManagerService;
-            _settingsWindow = settingsWindow;
+            _closeWindowAction = closeWindowAction;
 
             ApplyAndCloseCommand = new RelayCommand(ApplyThemeAndClose);
             CloseWindowCommand = new RelayCommand(CloseWindow);
@@ -48,19 +43,17 @@ namespace DawProjectBrowser.Desktop.ViewModels
         private void LoadAvailableThemes()
         {
             AvailableThemes.Clear();
-            AvailableThemes.Add("(Default)"); // The first option is always to revert to the system/base theme
+            AvailableThemes.Add("(Default)");
 
             try
             {
-                // Find all .axaml files in the custom themes directory
                 var themeFiles = Directory.EnumerateFiles(App.CustomThemesPath, "*.axaml", SearchOption.TopDirectoryOnly)
-                    .Select(Path.GetFileNameWithoutExtension) // Get just the file name without extension
+                    .Select(Path.GetFileNameWithoutExtension)
                     .Where(name => !string.IsNullOrWhiteSpace(name))
                     .ToList();
                 
                 foreach (var name in themeFiles)
                 {
-                    // FIX CS8604: Using the null-forgiving operator as we've already filtered out nulls/whitespace
                     AvailableThemes.Add(name!); 
                 }
             }
@@ -74,12 +67,10 @@ namespace DawProjectBrowser.Desktop.ViewModels
         {
             if (SelectedThemeName == "(Default)")
             {
-                // If default is selected, remove the custom theme
                 _themeManagerService.RevertToDefaultTheme();
             }
             else
             {
-                // Apply the selected custom theme
                 string fullPath = Path.Combine(App.CustomThemesPath, SelectedThemeName + ".axaml");
                 _themeManagerService.LoadAndApplyTheme(fullPath);
             }
@@ -89,7 +80,8 @@ namespace DawProjectBrowser.Desktop.ViewModels
 
         private void CloseWindow()
         {
-            _settingsWindow.Close();
+            // Invoke the action passed during construction
+            _closeWindowAction.Invoke();
         }
     }
 }

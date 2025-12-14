@@ -2,109 +2,124 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
-using System.Threading;
-using Avalonia.Platform.Storage;
+using System.IO;
+using System.Diagnostics;
+using System.Linq;
+
+// Community Toolkit MVVM
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+
+// Avalonia
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Platform.Storage;
+using Avalonia.Controls.ApplicationLifetimes;
+
+// Project Namespaces
 using DawProjectBrowser.Desktop.Models;
-using DawProjectBrowser.Desktop.Services; 
-using DawProjectBrowser.Desktop.Views; 
-using Avalonia; 
-using Avalonia.Controls; 
-using System.Diagnostics;
-using System.IO; 
-// Removed NAudio and System.Timers here, as the NAudioPlayer service handles them
+using DawProjectBrowser.Desktop.Services;
+using DawProjectBrowser.Desktop.Views;
 
 namespace DawProjectBrowser.Desktop.ViewModels
 {
-    // Ensure IDisposable is kept for audio cleanup
     public partial class ProjectListViewModel : ObservableObject, IDisposable
     {
         private readonly FileBrowserService _fileBrowserService = new();
-        
-        private readonly IAudioPlayer _audioPlayer; 
-        
-        private readonly ThemeManagerService _themeManagerService = new(); 
+        private readonly IAudioPlayer _audioPlayer;
+        private readonly ThemeManagerService _themeManagerService = new(); // Instance managed here
         private StorageService? _storageService;
-        
+
+        // Path for storing persistence
         private static readonly string SettingsFilePath = 
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), 
                          "DawProjectBrowser", 
                          "last_folder.txt");
 
-        // --- NEW UI BINDING PROPERTIES FOR AUDIO BAR ---
-        [ObservableProperty]
-        private bool _isAudioPlaying; 
+        // --- AUDIO UI PROPERTIES ---
+        [ObservableProperty] private bool _isAudioPlaying;
+        [ObservableProperty] private bool _isAudioPaused;
         
+        // Duration Property - Updates the formatted string when set
+        private TimeSpan _trackDuration = TimeSpan.Zero;
+        public TimeSpan TrackDuration 
+        {
+            get => _trackDuration;
+            set
+            {
+                if (SetProperty(ref _trackDuration, value))
+                {
+                    OnPropertyChanged(nameof(FormattedDuration));
+                }
+            }
+        }
+        
+        // Position Property - Updates the formatted string when set
+        private TimeSpan _trackPosition = TimeSpan.Zero;
+        public TimeSpan TrackPosition
+        {
+            get => _trackPosition;
+            set
+            {
+                if (SetProperty(ref _trackPosition, value))
+                {
+                    OnPropertyChanged(nameof(FormattedPosition));
+                }
+            }
+        }
+        
+        // Formatted Read-Only Properties for the UI
+        public string FormattedDuration => _trackDuration.ToString(@"m\:ss");
+        public string FormattedPosition => _trackPosition.ToString(@"m\:ss");
+
+
+        [ObservableProperty] private string _currentlyPlayingProject = "No Track Loaded";
+
+        // --- MAIN PROPERTIES ---
         [ObservableProperty] 
-        private bool _isAudioPaused; 
-
-        [ObservableProperty]
-        private TimeSpan _trackDuration = TimeSpan.Zero; 
-        
-        [ObservableProperty]
-        private TimeSpan _trackPosition = TimeSpan.Zero; 
-        
-        [ObservableProperty]
-        private string _currentlyPlayingProject = "No Track Loaded";
-        // --------------------------------------------------
-
-        [ObservableProperty]
         private string _currentProjectFolder = "Please click 'Browse Folder...' to begin.";
         
         public ObservableCollection<DawProject> Projects { get; } = new ObservableCollection<DawProject>();
         
+        [ObservableProperty]
         private DawProject? _selectedProject;
-        public DawProject? SelectedProject
-        {
-            get => _selectedProject;
-            set => SetProperty(ref _selectedProject, value);
-        }
 
-        // Commands (actions)
+        // --- COMMANDS ---
         public IAsyncRelayCommand BrowseFolderCommand { get; }
-        public IAsyncRelayCommand<DawProject?> PlayDemoCommand { get; } 
+        public IAsyncRelayCommand<DawProject?> PlayDemoCommand { get; }
         public IRelayCommand<DawProject?> OpenProjectCommand { get; }
         public IRelayCommand OpenSettingsCommand { get; }
-        
-        public IRelayCommand StopDemoCommand { get; } 
-        public IRelayCommand PauseDemoCommand { get; } 
+        public IRelayCommand StopDemoCommand { get; }
+        public IRelayCommand PauseDemoCommand { get; }
+        // The SeekCommand now takes a double (TotalSeconds) from the Slider Value
         public IRelayCommand<double> SeekCommand { get; } 
 
-
-        // Constructor: Now accepts the IAudioPlayer
+        // --- CONSTRUCTOR ---
         public ProjectListViewModel(IAudioPlayer audioPlayer)
         {
             _audioPlayer = audioPlayer;
             
-            // Subscribe to the audio player's events to update UI bindings (These lines are now valid again)
+            // Audio Events
             _audioPlayer.PositionUpdated += OnAudioPositionUpdated;
             _audioPlayer.PlaybackStopped += OnPlaybackStopped;
             _audioPlayer.PlaybackResumed += OnPlaybackResumed;
             _audioPlayer.PlaybackPaused += OnPlaybackPaused;
 
-
-            // Initialize commands
+            // Command Init
             BrowseFolderCommand = new AsyncRelayCommand(BrowseFolder);
-            PlayDemoCommand = new AsyncRelayCommand<DawProject?>(PlayOrResumeDemoAsync); 
+            PlayDemoCommand = new AsyncRelayCommand<DawProject?>(PlayOrResumeDemoAsync);
             OpenProjectCommand = new RelayCommand<DawProject?>(OpenProject);
-            OpenSettingsCommand = new RelayCommand(OpenSettings); 
+            OpenSettingsCommand = new RelayCommand(OpenSettings);
             
-            // Initialize NEW control commands
             StopDemoCommand = new RelayCommand(StopPlayback);
             PauseDemoCommand = new RelayCommand(PausePlayback);
+            SeekCommand = new RelayCommand<double>(SeekPlayback);
             
-            SeekCommand = new RelayCommand<double>(SeekPlayback); 
-            
-            LoadLastFolder(); // Called in constructor
+            LoadLastFolder();
         }
 
-        // --- Audio Event Handlers ---
-        
-        private void OnAudioPositionUpdated(object? sender, TimeSpan position)
-        {
-            TrackPosition = position;
-        }
+        // --- AUDIO EVENT HANDLERS ---
+        private void OnAudioPositionUpdated(object? sender, TimeSpan position) => TrackPosition = position;
 
         private void OnPlaybackStopped(object? sender, EventArgs e)
         {
@@ -130,113 +145,75 @@ namespace DawProjectBrowser.Desktop.ViewModels
             Console.WriteLine("[DEBUG] Audio playback resumed.");
         }
 
-        // --- Core Playback Logic (Called by Commands) ---
-
-        // This method handles both initial play (from card) and the toggle logic (from the central button)
+        // --- PLAYBACK LOGIC ---
         private async Task PlayOrResumeDemoAsync(DawProject? project)
         {
-            // If project is null, the command was called from the main player bar (the circular button)
+            // Case: Clicked main play/pause button (no specific project passed)
             if (project == null)
             {
-                // Case 1: Called from central button AND audio is currently playing -> STOP IT (The square icon)
-                if (IsAudioPlaying) 
-                {
-                    _audioPlayer.Stop(); // Calling Stop will trigger OnPlaybackStopped, updating IsAudioPlaying to false
-                    return;
-                }
-
-                // Case 2: Called from central button AND audio is paused -> RESUME.
-                if (_audioPlayer.IsPaused)
-                {
-                    _audioPlayer.Resume(); // Calling Resume will trigger OnPlaybackResumed, updating IsAudioPlaying to true
-                    return;
-                }
+                if (IsAudioPlaying) { _audioPlayer.Stop(); return; } // Assuming main button is stop/play
+                if (_audioPlayer.IsPaused) { _audioPlayer.Resume(); return; }
                 
-                // Case 3: Called from central button AND stopped (The play icon is showing).
-                // We need a file to play. Use the last selected file if available.
+                // Fallback: try to play selected
                 project = SelectedProject;
-
                 if (project == null || string.IsNullOrEmpty(project.DemoClipPath))
                 {
-                    Console.WriteLine("[DEBUG] Central button clicked but no track selected or playable.");
+                    Console.WriteLine("[DEBUG] No track selected to play.");
                     return;
                 }
-                // Fall through to play the last selected project.
             }
 
-            // --- Logic for playing a new or resumed track ---
-
-            // A new project was selected from a card OR we resumed a stopped track.
+            // Case: Playing a specific project (Card clicked or resuming Selected)
             SelectedProject = project;
 
             if (string.IsNullOrEmpty(project!.DemoClipPath)) return;
             
-            // Stop any currently playing track before starting a new one (important when clicking a new card)
-            _audioPlayer.Stop();
-            
+            _audioPlayer.Stop(); // Ensure stop before start
             await _audioPlayer.Play(project.DemoClipPath); 
             
-            // Update UI properties based on the loaded file
+            // Set Duration immediately after playing
             TrackDuration = _audioPlayer.CurrentDuration;
             TrackPosition = _audioPlayer.CurrentPosition;
             CurrentlyPlayingProject = project.Name;
             
-            // State will be updated by OnPlaybackResumed, but set initial state
+            // UI state updates via Event Handlers, but set immediate intent here
             IsAudioPlaying = true;
             IsAudioPaused = false;
         }
 
-        private void StopPlayback()
-        {
-            _audioPlayer.Stop();
-        }
-        
-        private void PausePlayback()
-        {
-            _audioPlayer.Pause();
-        }
-        
-        // CRITICAL: Now correctly implements seeking based on the double value from the slider
+        private void StopPlayback() => _audioPlayer.Stop();
+        private void PausePlayback() => _audioPlayer.Pause();
+
         private void SeekPlayback(double totalSeconds)
         {
-            // Convert slider seconds back to a TimeSpan
+            // Convert the double value from the slider back to a TimeSpan
             TimeSpan newPosition = TimeSpan.FromSeconds(totalSeconds);
             
             _audioPlayer.SetPosition(newPosition);
             
-            // Immediately update the UI to reflect the new position
+            // Immediately update the UI property for instant feedback
             TrackPosition = newPosition; 
             
             Console.WriteLine($"[DEBUG] Audio seeking to: {TrackPosition.TotalSeconds:F1}s");
         }
-        
-        // --- Existing Command/Service Handlers ---
 
-        /// <summary>
-        /// Called by the MainWindow (via Program.cs) to give the ViewModel access to OS dialogs.
-        /// </summary>
+        // --- STORAGE & SETTINGS ---
         public void SetStorageService(IStorageProvider storageProvider)
         {
             _storageService = new StorageService(storageProvider);
         }
-        
+
         private void SaveLastFolder(string path)
         {
             try
             {
                 string? directory = Path.GetDirectoryName(SettingsFilePath);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
                     Directory.CreateDirectory(directory);
-                }
                 
                 File.WriteAllText(SettingsFilePath, path);
-                Console.WriteLine($"[DEBUG-SETTINGS] Saved last folder: {path}");
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR-SETTINGS] Failed to save folder: {ex.Message}");
-            }
+            catch (Exception ex) { Console.WriteLine($"[ERROR] Failed to save settings: {ex.Message}"); }
         }
 
         private void LoadLastFolder()
@@ -250,32 +227,22 @@ namespace DawProjectBrowser.Desktop.ViewModels
                     {
                         CurrentProjectFolder = lastPath;
                         LoadProjects(lastPath);
-                        Console.WriteLine($"[DEBUG-SETTINGS] Loaded last folder: {lastPath}");
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR-SETTINGS] Failed to load folder: {ex.Message}");
-            }
+            catch (Exception ex) { Console.WriteLine($"[ERROR] Failed to load settings: {ex.Message}"); }
         }
 
         private async Task BrowseFolder()
         {
-            if (_storageService == null)
-            {
-                Console.WriteLine("[ERROR] Storage Service not initialized.");
-                return;
-            }
-
+            if (_storageService == null) return;
             string? selectedPath = await _storageService.OpenFolderPickerAsync();
 
             if (!string.IsNullOrWhiteSpace(selectedPath))
             {
                 CurrentProjectFolder = selectedPath;
                 LoadProjects(selectedPath);
-                
-                SaveLastFolder(selectedPath); // Save after loading
+                SaveLastFolder(selectedPath);
             }
         }
 
@@ -283,53 +250,44 @@ namespace DawProjectBrowser.Desktop.ViewModels
         {
             Projects.Clear();
             var loadedProjects = _fileBrowserService.GetProjects(basePath);
-
-            foreach (var project in loadedProjects)
-            {
-                Projects.Add(project);
-            }
+            foreach (var project in loadedProjects) Projects.Add(project);
         }
         
         private void OpenProject(DawProject? project)
         {
-            Console.WriteLine($"[DEBUG-PATH] Logo path being loaded: {project?.DawLogoPathBitmap}");
+            if (project == null || string.IsNullOrEmpty(project.FilePath)) return;
 
-            if (project == null || string.IsNullOrEmpty(project.FilePath)) 
-            {
-                Console.WriteLine("[ERROR] Cannot open project: Project or FilePath is missing.");
-                return;
-            }
-
-            StopPlayback(); 
-            
+            StopPlayback();
             try
             {
-                var startInfo = new ProcessStartInfo(project.FilePath)
-                {
-                    UseShellExecute = true
-                };
-
-                Process.Start(startInfo);
-                
-                Console.WriteLine($"[DEBUG] Attempting to open DAW project: {project.FilePath}");
+                Process.Start(new ProcessStartInfo(project.FilePath) { UseShellExecute = true });
+                Console.WriteLine($"[DEBUG] Opening DAW project: {project.FilePath}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Failed to launch project file: {project.FilePath}. Exception: {ex.Message}");
+                Console.WriteLine($"[ERROR] Failed to launch project: {ex.Message}");
             }
         }
         
+        // --- FIXED OPEN SETTINGS METHOD ---
         private void OpenSettings()
         {
+            // 1. Create the Window
             var settingsWindow = new SettingsWindow();
             
-            var settingsViewModel = new SettingsViewModel(_themeManagerService, settingsWindow);
+            // 2. Create the Close Action the VM will use
+            Action closeAction = settingsWindow.Close;
             
-            settingsWindow.SetViewModel(settingsViewModel);
+            // 3. Create the VM, passing the Service and the Close Action (Not the Window)
+            var settingsViewModel = new SettingsViewModel(_themeManagerService, closeAction);
             
-            if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
+            // 4. Assign DataContext
+            settingsWindow.DataContext = settingsViewModel;
+            
+            // 5. Show Window
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop && desktop.MainWindow != null)
             {
-                settingsWindow.ShowDialog((Window)desktop.MainWindow);
+                settingsWindow.ShowDialog(desktop.MainWindow);
             }
             else
             {
@@ -338,12 +296,10 @@ namespace DawProjectBrowser.Desktop.ViewModels
             Console.WriteLine("[DEBUG] Opened Settings Window.");
         }
         
-        // Dispose method implementation
         public void Dispose()
         {
             _audioPlayer.Dispose(); 
             GC.SuppressFinalize(this);
-            Console.WriteLine("[DEBUG] ViewModel Disposed (Audio cleanup complete).");
         }
     }
 }

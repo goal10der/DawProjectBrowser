@@ -15,19 +15,26 @@
         <SolidColorBrush x:Key="ThemeForegroundBrush" Color="White" />
         <SolidColorBrush x:Key="ThemeControlLowBrush" Color="#252525" />
         <SolidColorBrush x:Key="ThemeBorderLowBrush" Color="#3A3A3A" />
-        
-        <Geometry x:Key="PlayIcon">M15 12.7c.3-.2.3-.7 0-.9l-5.6-3.8c-.5-.3-1 .1-1 .7v7.6c0 .6.5 1 1 .7l5.6-3.8z</Geometry>
+
+
         <Geometry x:Key="FolderIcon">M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z</Geometry>
         <Geometry x:Key="MoreIcon">M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z</Geometry>
-        
-        <PathGeometry x:Key="StopIcon" Figures="M 4 4 L 4 20 L 20 20 L 20 4 Z"/>
-
+        <Geometry x:Key="PlayIcon">M15 12.7c.3-.2.3-.7 0-.9l-5.6-3.8c-.5-.3-1 .1-1 .7v7.6c0 .6.5 1 1 .7l5.6-3.8z</Geometry>
         <Geometry x:Key="PlayFilled">M8 5v14l11-7z</Geometry>
         <Geometry x:Key="PauseFilled">M6 19h4V5H6v14zm8-14v14h4V5h-4z</Geometry>
         <Geometry x:Key="StopFilled">M6 6h12v12H6z</Geometry>
+    
+        <Geometry x:Key="PauseIcon" >M6 19h4V5H6v14zm8-14v14h4V5h-4z</Geometry>
+        <Geometry x:Key="StopIcon" >M6 6h12v12H6z</Geometry>
+
+        <Geometry x:Key="MinimizeIcon">M20 14H4v-4h16z</Geometry>
+        <Geometry x:Key="MaximizeIcon">M18 18H6V6h12v12zM6 4h12c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z</Geometry>
+        <Geometry x:Key="CloseIcon">M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z</Geometry>
+        <Geometry x:Key="RestoreIcon">M18 14h-2V6H6v8H4V6c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2v8zM4 18h12v-2H4v2z</Geometry>
     </Application.Resources>
 
     <Application.Styles>
         <FluentTheme />
-    </Application.Styles>
+        
+        </Application.Styles>
 </Application>

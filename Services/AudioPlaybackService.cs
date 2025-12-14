@@ -1,174 +1,296 @@
 #nullable enable
 using System;
-using System.Diagnostics; 
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using ManagedBass;
+using System.Runtime.InteropServices;
+using System.Reflection;
+using System.Threading;
+// Removed: System.Collections.Generic is not necessary
 
 namespace DawProjectBrowser.Desktop.Services
 {
-    // Now implementing the rich IAudioPlayer interface
-    public class AudioPlaybackService : IAudioPlayer
+    // The IDisposable is implicitly required to clean up BASS
+    public class AudioPlaybackService : IAudioPlayer, IDisposable
     {
-        private Process? currentPlaybackProcess;
+        // --- FIELDS AND CONSTANTS ---
+        private int _streamHandle;
+        private bool _isPaused;
+        // Removed: private const int DEMO_DURATION_SECONDS = 5;
+        private readonly Timer? _positionTimer; 
+        private bool _isDisposed = false;
         
-        // Keep demo clips short - nobody wants to listen to a whole song
-        private const int DEMO_DURATION_SECONDS = 5;
+        // Final known location of the native library on the user's disk
+        private static string? _finalNativeLibraryPath;
 
-        // --- NEW: Implementation of Required IAudioPlayer Members (Dummy/Placeholder) ---
-        
-        // Properties (Return defaults, as ffplay cannot provide real-time data)
-        public TimeSpan CurrentPosition => TimeSpan.Zero;
-        public TimeSpan CurrentDuration => TimeSpan.FromSeconds(DEMO_DURATION_SECONDS); // A reasonable guess
-        public bool IsPaused => false; // We treat this player as either Stopped or Playing
-        
-        // Events (Must be defined, even if never fired)
+        // --- IAudioPlayer Properties ---
+
+        public TimeSpan CurrentPosition 
+        {
+            get 
+            {
+                if (_streamHandle == 0 || _isDisposed) return TimeSpan.Zero;
+                long posBytes = Bass.ChannelGetPosition(_streamHandle);
+                double seconds = Bass.ChannelBytes2Seconds(_streamHandle, posBytes);
+                return TimeSpan.FromSeconds(seconds);
+            }
+        }
+
+        public TimeSpan CurrentDuration 
+        {
+            get
+            {
+                if (_streamHandle == 0 || _isDisposed) return TimeSpan.Zero;
+                long lenBytes = Bass.ChannelGetLength(_streamHandle);
+                double seconds = Bass.ChannelBytes2Seconds(_streamHandle, lenBytes);
+                return TimeSpan.FromSeconds(seconds);
+            }
+        }
+
+        public bool IsPaused => _isPaused;
+
+        // --- IAudioPlayer Events ---
         public event EventHandler<TimeSpan>? PositionUpdated;
         public event EventHandler? PlaybackResumed;
         public event EventHandler? PlaybackPaused;
-        
-        // Renamed/Wrapped Methods
-        public Task Play(string filePath) => PlayDemoClip(filePath); // Maps rich Play() to simple PlayDemoClip()
-        public void Stop() => StopCurrentPlayback(); // Maps rich Stop() to simple StopCurrentPlayback()
-        
-        // Dummy Control Methods (ffplay cannot pause, resume, or seek)
-        public void Pause() { /* Do nothing */ Console.WriteLine("[DEBUG] Pause requested, but unsupported by ffplay."); }
-        public void Resume() { /* Do nothing */ Console.WriteLine("[DEBUG] Resume requested, but unsupported by ffplay."); }
-        public void SetPosition(TimeSpan position) { /* Do nothing */ Console.WriteLine("[DEBUG] Seek requested, but unsupported by ffplay."); }
-        // --- END: IAudioPlayer Members ---
+        public event EventHandler? PlaybackStopped; // (The actual event you use)
 
-        // The actual event you fire in your logic
-        public event EventHandler? PlaybackStopped;
-
+        // --- Constructor and Initialization (Robust BASS Loading) ---
 
         public AudioPlaybackService()
         {
-            Console.WriteLine("[AudioService] Initialized with OS native fallback approach");
+            // 1. Determine OS and expected file name
+            string nativeFileName = GetPlatformNativeFileName();
+            string appDataDirectory = GetLocalAppDataDirectory();
+            
+            _finalNativeLibraryPath = Path.Combine(appDataDirectory, nativeFileName);
+            
+            // 2. Copy the native library to the known AppData path
+            if (!File.Exists(_finalNativeLibraryPath))
+            {
+                CopyNativeLibraryToAppData(nativeFileName, appDataDirectory);
+            }
+            
+            // 3. Configure Resolver (Now points ONLY to the fixed AppData path)
+            try
+            {
+                NativeLibrary.SetDllImportResolver(typeof(Bass).Assembly, BassNativeLibraryResolver);
+                Console.WriteLine("[DEBUG] Custom NativeLibrary Resolver configured to use AppData path.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[WARNING] Failed to configure native resolver: {ex.Message}");
+            }
+
+            // 4. Initialize BASS (The resolver will now load from the fixed AppData path)
+            if (!Bass.Init(-1, 44100, DeviceInitFlags.Default, IntPtr.Zero))
+            {
+                Console.WriteLine($"[ERROR] BASS Init failed: {Bass.LastError} (Native library path: {_finalNativeLibraryPath})");
+            }
+            else
+            {
+                Console.WriteLine("[AudioService] Initialized with ManagedBass.");
+                _positionTimer = new Timer(UpdatePosition, null, 0, 100);
+            }
+        }
+        
+        // --- Library Management Helpers ---
+
+        private static string GetPlatformNativeFileName()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) return "libbass.dylib";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return "bass.dll";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return "libbass.so";
+            return "bass";
         }
 
-        // Renamed PlayDemoClip to be public and return Task to satisfy IAudioPlayer.Play() contract
+        private static string GetLocalAppDataDirectory()
+        {
+            string path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), 
+                "DawProjectBrowser"
+            );
+            Directory.CreateDirectory(path);
+            return path;
+        }
+        
+        private static void CopyNativeLibraryToAppData(string nativeFileName, string appDataDirectory)
+        {
+            string sourcePath = Path.Combine(AppContext.BaseDirectory, nativeFileName);
+            string destinationPath = Path.Combine(appDataDirectory, nativeFileName);
+            
+            // Fallback for when the extractor uses the simplified "bass.so" name (Linux specific)
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                 string sourcePath_Bass = Path.Combine(AppContext.BaseDirectory, "bass.so");
+                 if (File.Exists(sourcePath_Bass))
+                 {
+                     sourcePath = sourcePath_Bass;
+                 }
+            }
+
+            if (File.Exists(sourcePath))
+            {
+                try
+                {
+                    File.Copy(sourcePath, destinationPath, true); 
+                    Console.WriteLine($"[ASSET COPY] Copied native library from {sourcePath} to {destinationPath}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ASSET COPY ERROR] Failed to copy native library: {ex.Message}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[ASSET COPY ERROR] Source file not found in extraction folder: {sourcePath}");
+            }
+        }
+
+        // --- Native Library Resolver Logic (SIMPLIFIED) ---
+
+        private static IntPtr BassNativeLibraryResolver(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+        {
+            if (libraryName == "bass" && !string.IsNullOrEmpty(_finalNativeLibraryPath))
+            {
+                if (File.Exists(_finalNativeLibraryPath))
+                {
+                    Console.WriteLine($"[RESOLVER] SUCCESS: Loading fixed path: {_finalNativeLibraryPath}");
+                    return NativeLibrary.Load(_finalNativeLibraryPath);
+                }
+                else
+                {
+                    Console.WriteLine($"[RESOLVER ERROR] Native library not found at fixed path: {_finalNativeLibraryPath}");
+                }
+            }
+            return IntPtr.Zero; // Fall back to default resolution
+        }
+
+        // --- IAudioPlayer Interface Methods ---
+
+        public Task Play(string filePath) => PlayDemoClip(filePath); 
+
+        public void Stop() => StopCurrentPlayback(); 
+
+        public void Pause()
+        {
+            if (_streamHandle != 0 && Bass.ChannelPause(_streamHandle))
+            {
+                _isPaused = true;
+                PlaybackPaused?.Invoke(this, EventArgs.Empty);
+                Console.WriteLine("[DEBUG] Playback paused.");
+            }
+        }
+
+        public void Resume()
+        {
+            if (_streamHandle != 0 && _isPaused)
+            {
+                if (Bass.ChannelPlay(_streamHandle))
+                {
+                    _isPaused = false;
+                    PlaybackResumed?.Invoke(this, EventArgs.Empty);
+                    Console.WriteLine("[DEBUG] Playback resumed.");
+                }
+            }
+        }
+
+        public void SetPosition(TimeSpan position)
+        {
+            if (_streamHandle != 0)
+            {
+                long posBytes = Bass.ChannelSeconds2Bytes(_streamHandle, position.TotalSeconds);
+                Bass.ChannelSetPosition(_streamHandle, posBytes);
+                PositionUpdated?.Invoke(this, position);
+            }
+        }
+        
+        // --- Helper / BASS Logic Methods ---
+        
         public Task PlayDemoClip(string filePath)
         {
-            // Stop anything that might be playing first
-            StopCurrentPlayback(); 
+            StopCurrentPlayback(); // Free previous stream
 
-            if (!File.Exists(filePath))
+            if (!File.Exists(filePath)) 
             {
                 Console.WriteLine($"[ERROR] Audio file missing: {filePath}");
                 return Task.CompletedTask;
             }
-            
-            string fileExt = Path.GetExtension(filePath).ToLower();
-            string playerCommand = "";
-            string playerArgs = "";
 
-            try
+            // Create a stream from the file
+            _streamHandle = Bass.CreateStream(filePath, 0, 0, BassFlags.Default);
+
+            if (_streamHandle == 0)
             {
-                // Removed the redundant 'useFfplay' variable to resolve the compiler warning.
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    if (fileExt == ".wav")
-                    {
-                        playerCommand = "powershell";
-                        playerArgs = $"-c \"$player = New-Object Media.SoundPlayer '{filePath}'; $player.PlaySync();\"";
-                    }
-                    else
-                    {
-                        playerCommand = "ffplay.exe";
-                        playerArgs = $"-nodisp -autoexit -t {DEMO_DURATION_SECONDS} \"{filePath}\"";
-                    }
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    if (fileExt == ".wav" || fileExt == ".mp3" || fileExt == ".m4a")
-                    {
-                        playerCommand = "afplay";
-                        playerArgs = $"-t {DEMO_DURATION_SECONDS} \"{filePath}\"";
-                    }
-                    else
-                    {
-                        playerCommand = "ffplay";
-                        playerArgs = $"-nodisp -autoexit -t {DEMO_DURATION_SECONDS} \"{filePath}\"";
-                    }
-                }
-                else 
-                {
-                    playerCommand = "ffplay";
-                    playerArgs = $"-nodisp -autoexit -t {DEMO_DURATION_SECONDS} \"{filePath}\""; 
-                }
-                
-                if (string.IsNullOrEmpty(playerCommand))
-                {
-                    Console.WriteLine("[ERROR] Couldn't figure out how to play audio on this platform");
-                    return Task.CompletedTask;
-                }
-
-                currentPlaybackProcess = new Process();
-                currentPlaybackProcess.StartInfo.FileName = playerCommand;
-                currentPlaybackProcess.StartInfo.Arguments = playerArgs;
-                currentPlaybackProcess.StartInfo.UseShellExecute = false;
-                currentPlaybackProcess.StartInfo.RedirectStandardOutput = true;
-                currentPlaybackProcess.StartInfo.RedirectStandardError = true;
-                currentPlaybackProcess.StartInfo.CreateNoWindow = true;
-
-                // Set up event to know when the demo is finished playing
-                currentPlaybackProcess.EnableRaisingEvents = true;
-                currentPlaybackProcess.Exited += (sender, e) =>
-                {
-                    PlaybackStopped?.Invoke(this, EventArgs.Empty);
-                    Console.WriteLine("[DEBUG] Audio playback finished (Process Exited)");
-                };
-                
-                currentPlaybackProcess.Start();
-                Console.WriteLine($"[DEBUG] Playing: {Path.GetFileName(filePath)} using {playerCommand}");
-
+                Console.WriteLine($"[ERROR] Could not create stream: {Bass.LastError}");
+                return Task.CompletedTask;
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] Playback failed: {ex.Message}");
-                Console.WriteLine($"Make sure {playerCommand} is installed and accessible");
-            }
+
+            // Play the stream
+            Bass.ChannelPlay(_streamHandle);
+            _isPaused = false;
+            Console.WriteLine($"[DEBUG] Playing: {Path.GetFileName(filePath)}");
+
+            // Setup "End Sync" (Event when audio finishes naturally)
+            Bass.ChannelSetSync(_streamHandle, SyncFlags.End, 0, OnChannelEnd, IntPtr.Zero);
+
+            // 🛑 REMOVED: The manual timer block that forced the 5-second stop.
+            // The clip will now play to its natural end, triggering OnChannelEnd.
 
             return Task.CompletedTask;
         }
-        
-        public void StopCurrentPlayback()
+
+        private void OnChannelEnd(int handle, int channel, int data, IntPtr user)
         {
-            if (currentPlaybackProcess != null && !currentPlaybackProcess.HasExited)
+            if (channel == _streamHandle)
             {
-                try
-                {
-                    currentPlaybackProcess.Kill();
-                    currentPlaybackProcess.WaitForExit(100);  
-                    
-                    // Manually invoke stopped event if the process was killed before natural end
-                    PlaybackStopped?.Invoke(this, EventArgs.Empty); 
-                    Console.WriteLine("[DEBUG] Audio playback stopped by user action");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[WARNING] Had trouble stopping playback: {ex.Message}");
-                }
-            }
-            
-            // Clean up
-            if (currentPlaybackProcess != null)
-            {
-                currentPlaybackProcess.Dispose();
-                currentPlaybackProcess = null;
+                StopCurrentPlayback(isInternalCallback: true);
             }
         }
         
-        // This method from the original service is kept, but it is not part of IAudioPlayer
-        public void OpenFileInDefaultApp(string projectPath)
+        public void StopCurrentPlayback(bool isInternalCallback = false)
         {
-             // ... implementation ...
+            if (_streamHandle != 0)
+            {
+                if (!isInternalCallback)
+                {
+                    Bass.ChannelStop(_streamHandle);
+                    Bass.StreamFree(_streamHandle);
+                }
+                
+                _streamHandle = 0;
+                _isPaused = false;
+                
+                // Fire event
+                PlaybackStopped?.Invoke(this, EventArgs.Empty);
+                Console.WriteLine("[DEBUG] Playback stopped/freed.");
+            }
         }
+        
+        private void UpdatePosition(object? state)
+        {
+            if (_streamHandle != 0 && !_isPaused)
+            {
+                PlaybackState playbackState = Bass.ChannelIsActive(_streamHandle);
+                if (playbackState == PlaybackState.Playing)
+                {
+                    PositionUpdated?.Invoke(this, CurrentPosition);
+                }
+            }
+        }
+
+        // --- IDisposable Implementation ---
 
         public void Dispose()
         {
+            if (_isDisposed) return;
+            
+            _isDisposed = true;
+            _positionTimer?.Dispose();
             StopCurrentPlayback();
+            Bass.Free(); // Frees the physical output device
             GC.SuppressFinalize(this);
+            Console.WriteLine("[AudioService] Disposed and BASS freed.");
         }
     }
 }

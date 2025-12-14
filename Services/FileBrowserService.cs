@@ -1,13 +1,13 @@
 // DawProjectBrowser.Desktop/Services/FileBrowserService.cs
+
 #nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq; 
-using System.Reflection; // Needed for Assembly.GetExecutingAssembly
 using DawProjectBrowser.Desktop.Models;
 
-// CRITICAL FIXES: Required Avalonia usings for IBitmap loading
+// Required Avalonia usings for IBitmap loading
 using Avalonia.Platform;
 using Avalonia.Media.Imaging;
 
@@ -46,58 +46,79 @@ namespace DawProjectBrowser.Desktop.Services
             }
         }
         
+        // NEW: Helper to get the user-specific, external logos path (AppData equivalent)
+        private static string GetExternalLogosDirectory()
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string appDir = Path.Combine(appData, "DawProjectBrowser");
+            
+            // The path where the external logos will be found: [AppData]/DawProjectBrowser/Assets/DAWLogos
+            return Path.Combine(appDir, "Assets", "DAWLogos");
+        }
+
         /// <summary>
-        /// Resolves the application asset path and returns the loaded IBitmap directly.
+        /// Loads the DAW logo bitmap, prioritizing the external file system 
+        /// (AppData folder) for customization, and falling back 
+        /// to the embedded resource for first run/defaults.
         /// </summary>
         private Bitmap? GetDawLogoBitmap(string dawType)
         {
-            const string AssemblyName = "DawProjectBrowser.Desktop";
-            // FINAL FIX: Strict lowercase slash notation
-            const string BasePath = $"avares://{AssemblyName}/Assets/DAWLogos/"; 
-            
-            string normalizedType = dawType.Replace(" ", "_").ToLowerInvariant(); 
+            // 1. Determine the logo file name
+            string normalizedType = dawType.Replace(" ", "_").ToLowerInvariant();
             string logoFileName;
-
-            // Map the normalized type to the expected asset file name
             switch (normalizedType)
             {
                 case "logic_pro":
-                    logoFileName = "logic_pro.png";
-                    break;
                 case "fl_studio":
-                    logoFileName = "fl_studio.png";
-                    break;
                 case "ableton_live":
-                    logoFileName = "ableton_live.png";
+                    logoFileName = $"{normalizedType}.png";
                     break;
                 default:
                     logoFileName = "appIcon.ico"; 
                     break;
             }
 
+            // 2. --- CHECK EXTERNAL FILE SYSTEM FIRST (AppData) ---
+            string externalPath = Path.Combine(GetExternalLogosDirectory(), logoFileName);
+
+            if (File.Exists(externalPath))
+            {
+                try
+                {
+                    Console.WriteLine($"[DEBUG-BITMAP-LOAD] Loading logo from external file: {externalPath}");
+                    using (var stream = File.OpenRead(externalPath))
+                    {
+                        return new Bitmap(stream);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR-BITMAP-LOAD] Failed to load external logo at {externalPath}. Falling back. Error: {ex.Message}");
+                }
+            }
+            
+            // 3. --- FALLBACK TO EMBEDDED RESOURCE (avares://) ---
+            const string AssemblyName = "DawProjectBrowser.Desktop";
+            // NOTE: The embedded resource path must match the folder structure exactly
+            const string BasePath = $"avares://{AssemblyName}/Assets/DAWLogos/";
             string logoUri = BasePath + logoFileName;
 
             try
             {
-                // CRITICAL: Manually force the resource stream to open and load the bitmap
                 Uri uri = new Uri(logoUri);
-
-                // This method forces immediate loading of the resource stream
                 using (var stream = AssetLoader.Open(uri))
                 {
-                    Console.WriteLine($"[DEBUG-BITMAP-LOAD] Successfully opened stream for: {logoUri}");
+                    Console.WriteLine($"[DEBUG-BITMAP-LOAD] Loading logo from embedded resource: {logoUri}");
                     return new Bitmap(stream);
                 }
             }
             catch (Exception ex)
             {
-                // Log detailed error if the asset cannot be opened or converted to a bitmap
-                Console.WriteLine($"[ERROR-BITMAP-LOAD] Failed to load IBitmap for {logoUri}. Error: {ex.Message}");
-                return null; // Return null on failure
+                Console.WriteLine($"[ERROR-BITMAP-LOAD] Failed to load embedded logo for {logoUri}. Error: {ex.Message}");
+                return null;
             }
         }
-
-
+        
         /// <summary>
         /// Recursively scans a base path for DAW project files and associates them with a demo clip.
         /// </summary>
@@ -143,7 +164,6 @@ namespace DawProjectBrowser.Desktop.Services
                         
                         string? demoClipPath = FindMostRecentDemo(projectDirectory);
                         
-                        // CRITICAL: Call the new IBitmap loading method
                         Bitmap? logoBitmap = GetDawLogoBitmap(dawType); 
 
                         bool demoExists = !string.IsNullOrEmpty(demoClipPath);
@@ -154,7 +174,6 @@ namespace DawProjectBrowser.Desktop.Services
                             FilePath = projectFilePath,
                             DawType = dawType,
                             DemoClipPath = demoClipPath,
-                            // CRITICAL FIX: Assign the IBitmap to the new property name
                             DawLogoPathBitmap = logoBitmap 
                         });
                         

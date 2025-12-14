@@ -9,12 +9,22 @@
     <PublishTrimmed>false</PublishTrimmed>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <AvaloniaResource Include="Assets/DAWLogos/*.png" /> 
-    <AvaloniaResource Include="Assets/appIcon.ico" />
     
+    <AvaloniaXAMLAssemblies>
+        $(AvaloniaXAMLAssemblies);
+        Avalonia.Xaml.Interactivity;
+        Avalonia.Xaml.Interactions.Custom
+    </AvaloniaXAMLAssemblies>
+    </PropertyGroup>
+
+ <ItemGroup>
+    <AvaloniaResource Include="Assets/DAWLogos/*.png" />
+    <AvaloniaResource Include="Assets/DAWLogos/appIcon.ico" /> 
+    <Content Include="runtimes/linux-x64/native/libbass.so" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="libbass.so" PublishState="Preserve" />
+    
+    <Content Include="runtimes/win-x64/native/bass.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="bass.dll" PublishState="Preserve" />
+             
+    <Content Include="runtimes/osx-x64/native/libbass.dylib" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Link="libbass.dylib" PublishState="Preserve" />
     <PackageReference Include="Avalonia" Version="11.3.9" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.9" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.9" />
@@ -23,8 +33,10 @@
     <PackageReference Include="Avalonia.Native" Version="11.3.9" />
     <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.9" />
+    <PackageReference Include="Avalonia.Xaml.Interactions.Custom" Version="11.3.0.6" />
+    <PackageReference Include="Avalonia.Xaml.Interactivity" Version="11.3.0.6" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
-    <PackageReference Include="OwnAudioSharp" Version="2.3.1" />
+    <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="Silk.NET.Core" Version="2.22.0" />
     <PackageReference Include="Silk.NET.OpenAL" Version="2.22.0" />
     <PackageReference Include="Silk.NET.OpenAL.Extensions.Soft" Version="2.21.0" />

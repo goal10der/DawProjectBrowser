@@ -7,61 +7,118 @@
         xmlns:converters="using:DawProjectBrowser.Desktop.Converters" 
         xmlns:Template="using:Avalonia.Controls.Templates"
         
+        xmlns:i="using:Avalonia.Xaml.Interactivity"
+        xmlns:ia="using:Avalonia.Xaml.Interactions.Custom"
+        
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
         x:Class="DawProjectBrowser.Desktop.Views.MainWindow"
         
-        Icon="/Assets/appIcon.ico"
+        Icon="avares://DawProjectBrowser.Desktop/Assets/DAWLogos/appIcon.ico"
         Title="DAW Project Viewer"
-        
         
         TransparencyLevelHint="AcrylicBlur" 
         Background="Transparent"           
-        ExtendClientAreaToDecorationsHint="True"> 
+        ExtendClientAreaToDecorationsHint="True" 
+        
+        SystemDecorations="None"> 
 
     <Design.DataContext>
         <vm:ProjectListViewModel/>
     </Design.DataContext>
 
-    <Border BorderBrush="{DynamicResource ThemeBorderLowBrush}" 
-            CornerRadius="10"
-            BorderThickness="1">
+    <Grid RowDefinitions="Auto, *">
+        
+        <Border Grid.Row="0"
+                Name="TitleBar"
+                Background="Transparent"
+                Height="32" 
+                IsHitTestVisible="True"
+                PointerPressed="TitleBar_PointerPressed">
+            
+            <Grid ColumnDefinitions="*, Auto" Margin="10, 0">
+                <TextBlock Grid.Column="0" 
+                           Text="{Binding Title, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}" 
+                           VerticalAlignment="Center" 
+                           Foreground="{DynamicResource ThemeForegroundBrush}"/>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal" IsHitTestVisible="True">
+                    <Button Classes="icon-button window-button" 
+                            x:Name="MinimizeButton"
+                            Click="MinimizeButton_Click"
+                            Background="Transparent">
+                        <PathIcon Data="{StaticResource MinimizeIcon}" Width="16" Height="16"/>
+                    </Button>
+                    
+                    <Button Classes="icon-button window-button" 
+                            x:Name="MaximizeButton"
+                            Click="MaximizeButton_Click"
+                            Background="Transparent">
+                        <PathIcon Width="16" Height="16">
+                            <PathIcon.Data>
+                                <Binding Path="$parent[Window].WindowState">
+                                    <Binding.Converter>
+                                        <converters:WindowStateToGeometryConverter 
+                                            NormalValue="{StaticResource MaximizeIcon}"     
+                                            MaximizedValue="{StaticResource RestoreIcon}" />  
+                                    </Binding.Converter>
+                                </Binding>
+                            </PathIcon.Data>
+                        </PathIcon>
+                    </Button>
+                    
+                    <Button Classes="icon-button window-button" 
+                            x:Name="CloseButton"
+                            Click="CloseButton_Click"
+                            Background="Transparent"
+                            Foreground="Red">
+                        <PathIcon Data="{StaticResource CloseIcon}" Width="16" Height="16"/>
+                    </Button>
+                    </StackPanel>
+            </Grid>
+        </Border>
+        
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource ThemeBorderLowBrush}" 
+                CornerRadius="10"
+                BorderThickness="1">
             <DockPanel>
                 
-                <StackPanel DockPanel.Dock="Top" Orientation="Vertical" Margin="10" Spacing="5">
+                <StackPanel DockPanel.Dock="Top" Orientation="Vertical" Margin="10, 0, 10, 10" Spacing="5">
                     
-                    <Grid ColumnDefinitions="*, Auto, Auto">
-                        <TextBlock Grid.Column="0" Text="DAW Project Browser" FontSize="24" FontWeight="Bold" Classes="header" VerticalAlignment="Center"/>
+                    <Grid ColumnDefinitions="*, Auto, Auto" Height="30">
+                        <TextBlock Grid.Column="0" 
+                                   Text="DAW Project Browser" 
+                                   FontSize="24" FontWeight="Bold" 
+                                   Classes="header" 
+                                   VerticalAlignment="Center"
+                                   Margin="0, 0, 10, 0"/>
                         
                         <Button Grid.Column="1"
                                 Command="{Binding BrowseFolderCommand}"
                                 Background="Transparent"
                                 Padding="5"
                                 Classes="icon-button"
-                                Margin="0, 0, 5, 0">
-                            <PathIcon Data="{StaticResource FolderIcon}" Width="20" Height="20" Foreground="{DynamicResource ThemeAccentBrush}"/>
+                                ToolTip.Tip="Change Project Folder">
+                            <PathIcon Data="{StaticResource FolderIcon}" Width="20" Height="20" Foreground="White"/>
                         </Button>
                         
                         <Button Grid.Column="2" 
                                 Command="{Binding OpenSettingsCommand}"
                                 Background="Transparent"
                                 Padding="5"
-                                Classes="icon-button">
-                            <PathIcon Data="{StaticResource MoreIcon}" Width="20" Height="20" Foreground="{DynamicResource ThemeAccentBrush}"/>
+                                Classes="icon-button"
+                                ToolTip.Tip="Settings">
+                            <PathIcon Data="{StaticResource MoreIcon}" Width="20" Height="20" Foreground="White"/>
                         </Button>
                     </Grid>
                     
-                    <Grid ColumnDefinitions="*, Auto" Margin="0, 5, 0, 0">
-                        
+                    <Grid ColumnDefinitions="*" Margin="0, 5, 0, 0">
                         <TextBlock Grid.Column="0"
                                    Text="{Binding CurrentProjectFolder}" 
                                    VerticalAlignment="Center" 
                                    TextWrapping="Wrap"
-                                   Foreground="{DynamicResource ThemeAccentBrush}" Margin="0,0,10,0"/>
-
-                        <Button Grid.Column="1" 
-                                Content="Browse Folder..."
-                                Command="{Binding BrowseFolderCommand}"
-                                Classes="accent"/>
+                                   Foreground="{DynamicResource ThemeAccentBrush}" 
+                                   Margin="0,0,10,0"/>
                     </Grid>
                                
                     <Separator Classes="Thin" Margin="0,5,0,0"/>
@@ -69,47 +126,79 @@
                 </StackPanel>
                 
                 <Border DockPanel.Dock="Bottom" 
-                        Height="60" 
+                        Height="90" 
                         BorderThickness="0 1 0 0" 
                         BorderBrush="{DynamicResource ThemeBorderLowBrush}"> 
                     
-                    <Grid ColumnDefinitions="*, Auto" Margin="10 5">
+                    <StackPanel Orientation="Vertical" Margin="10 5">
                         
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0 0 10 0">
-                            <TextBlock Text="{Binding CurrentlyPlayingProject}" 
-                                       FontWeight="SemiBold" 
-                                       HorizontalAlignment="Left" 
-                                       Foreground="{DynamicResource ThemeAccentBrush}" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
+                        <Grid ColumnDefinitions="Auto, *, Auto" VerticalAlignment="Top" Height="25">
+                            
+                            <TextBlock Grid.Column="0" 
+                                       Text="{Binding FormattedPosition}" 
+                                       Margin="0, 0, 5, 0"
+                                       VerticalAlignment="Center"/>
+                            
+                            <Slider x:Name="TimelineSlider"
+                                    Grid.Column="1"
+                                    Minimum="0"
+                                    Maximum="{Binding TrackDuration.TotalSeconds}"
+                                    Value="{Binding TrackPosition.TotalSeconds}"
+                                    IsSnapToTickEnabled="False"
+                                    Margin="5, 0"
+                                    VerticalAlignment="Center">
+                                
+                            </Slider>
 
-                        <Button Grid.Column="1"
-                                Command="{Binding PlayDemoCommand}"
-                                CommandParameter="{x:Null}"  
-                                Width="45" Height="45"
-                                CornerRadius="22.5"
-                                VerticalAlignment="Center"
-                                HorizontalAlignment="Center"
-                                Classes="accent"
-                                Background="{DynamicResource AccentColor}"
-                                Margin="15 0">
-                            <PathIcon Width="25" Height="25" Foreground="White">
-                                <PathIcon.Data>
-                                    <Binding Path="IsAudioPlaying">
-                                        <Binding.Converter>
-                                            <converters:BooleanToGeometryConverter 
-                                                TrueValue="{StaticResource StopIcon}"     
-                                                FalseValue="{StaticResource PlayIcon}" />  
-                                        </Binding.Converter>
-                                    </Binding>
-                                </PathIcon.Data>
-                            </PathIcon>
-                        </Button>
-                    </Grid>
+                            <TextBlock Grid.Column="2" 
+                                       Text="{Binding FormattedDuration}" 
+                                       Margin="5, 0, 0, 0"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                        
+                        <Grid ColumnDefinitions="*, Auto, *" Margin="0 5 0 0">
+                            
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10">
+                                
+                                <Button Command="{Binding StopDemoCommand}"
+                                        Width="30" Height="30" CornerRadius="15"
+                                        Classes="icon-button">
+                                    <PathIcon Data="{StaticResource StopIcon}" Width="15" Height="15"/>
+                                </Button>
+                                
+                                <Button Command="{Binding PlayDemoCommand}"
+                                        CommandParameter="{x:Null}"  
+                                        Width="45" Height="45"
+                                        CornerRadius="22.5"
+                                        Classes="accent"
+                                        Background="{DynamicResource AccentColor}">
+                                    <PathIcon Width="25" Height="25" Foreground="White">
+                                        <PathIcon.Data>
+                                            <Binding Path="IsAudioPlaying">
+                                                <Binding.Converter>
+                                                    <converters:BooleanToGeometryConverter 
+                                                        TrueValue="{StaticResource PauseIcon}"     
+                                                        FalseValue="{StaticResource PlayIcon}" />  
+                                                </Binding.Converter>
+                                            </Binding>
+                                        </PathIcon.Data>
+                                    </PathIcon>
+                                </Button>
+                                
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding CurrentlyPlayingProject}" 
+                                               FontWeight="SemiBold" 
+                                               Foreground="{DynamicResource ThemeAccentBrush}" 
+                                               TextTrimming="CharacterEllipsis"
+                                               Margin="5, 0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
                 </Border>
                 
                 <ScrollViewer> 
                     <ItemsControl ItemsSource="{Binding Projects}" x:Name="ProjectItemsControl">
-                        
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal" Margin="5"/>
@@ -183,5 +272,6 @@
                     </ItemsControl>
                 </ScrollViewer>
             </DockPanel>
-    </Border> 
+        </Border> 
+    </Grid>
 </Window>
