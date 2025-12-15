@@ -13,7 +13,9 @@ The application runs on Windows, macOS, and Linux.
 - Logic Pro (.logicx)
 - FL Studio (.flp)
 - Ableton Live (.als)
-- Automatically ignores common non-project folders:
+
+### Automatically ignores common non-project folders:
+
 - backup, backups
 - .git, .svn
 - render
