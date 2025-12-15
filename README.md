@@ -4,8 +4,6 @@ DawProjectBrowser is a cross-platform desktop application for browsing music pro
 
 The application runs on Windows, macOS, and Linux.
 
-⸻
-
 ## Features
 
 ### **Project Discovery**
@@ -19,8 +17,6 @@ The application runs on Windows, macOS, and Linux.
 - backup, backups
 - .git, .svn
 - render
-
-⸻
 
 ## Audio Preview
 
@@ -39,15 +35,11 @@ The application runs on Windows, macOS, and Linux.
 - Playback position updates in real time
 - Only one project plays at a time
 
-⸻
-
 ## Visual Identification
 
 - Projects are labeled with DAW-specific logos
 - Logos can be overridden by the user
 - External logo files take priority over built-in assets
-
-⸻
 
 ## Theme Customization
 
